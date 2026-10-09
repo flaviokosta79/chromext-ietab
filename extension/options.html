@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>HikTab - Opções</title>
+  <link rel="icon" href="icons/icon32.png">
+  <style>
+    body { font: 14px "Segoe UI", sans-serif; color: #222; background: #fff; max-width: 720px; margin: 32px auto; padding: 0 16px; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 16px; margin-top: 28px; }
+    p, li { color: #444; line-height: 1.5; }
+    textarea { width: 100%; box-sizing: border-box; height: 140px; font: 13px Consolas, monospace; padding: 8px; }
+    button { padding: 7px 16px; margin-right: 8px; cursor: pointer; }
+    code { background: #f1f3f4; padding: 1px 5px; border-radius: 3px; }
+    .status { margin-left: 8px; font-weight: 600; }
+    .ok { color: #2e7d32; }
+    .err { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>HikTab — Modo IE para câmeras</h1>
+  <p>Abre os endereços abaixo automaticamente com o motor do Internet Explorer (com ActiveX), dentro da aba do Chrome.</p>
+
+  <h2>Endereços que abrem sempre no modo IE</h2>
+  <p>Um por linha. Exemplos: <code>192.168.0.64</code>, <code>192.168.0.64:8080</code>, <code>192.168.0.*</code>, <code>http://dvr.local/*</code></p>
+  <textarea id="sites" spellcheck="false"></textarea>
+  <p>
+    <button id="save">Salvar</button>
+    <button id="open">Abrir o primeiro endereço agora</button>
+    <span id="saved" class="status"></span>
+  </p>
+
+  <h2>Componente do Windows (HikTab Host)</h2>
+  <p>
+    <button id="test">Testar componente</button>
+    <span id="hoststatus" class="status"></span>
+  </p>
+  <p>Se o teste falhar, execute <code>install.cmd</code> na pasta do HikTab neste computador.</p>
+
+  <h2>Como usar</h2>
+  <ul>
+    <li>Digite o endereço do DVR na barra do Chrome: se estiver na lista acima, ele abre no modo IE.</li>
+    <li>O botão da extensão na barra alterna a aba atual entre o Chrome e o modo IE.</li>
+    <li>Clique com o botão direito num link e escolha <b>Abrir link no modo IE</b>.</li>
+  </ul>
+  <script src="options.js"></script>
+</body>
+</html>

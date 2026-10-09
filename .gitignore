@@ -1,0 +1,8 @@
+# Chave privada que fixa o ID da extensao - nunca versionar
+key.pem
+*.pem
+
+# Gerados
+*.exe
+*.zip
+

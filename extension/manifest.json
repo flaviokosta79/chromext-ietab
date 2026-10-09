@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "HikTab - Modo IE para câmeras",
+  "short_name": "HikTab",
+  "version": "1.0.0",
+  "description": "Abre páginas (como DVRs/NVRs Hikvision) com o motor do Internet Explorer dentro de uma aba do Chrome, com suporte a ActiveX.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjtosEiTXqFkUMosSEe5u3kvn4KOegxGPfEHekrxqikDIHFdYNCD1wM63z3y4kbjlKUFsFZhnIVXSYClAU0BBTB4NSElJPTBfXtUUyjnwlM8Q1aCi/bKLmCmymOxM+yZd6roXymTOq9grSvcjx4CIPLkQ6NfZyQNhUznPxciOGs0jRN+rnbEQs09jJhBOdcdNqAWCBUzs6RqjaPtP40ZbrOhn1Gzayvtkr0o61D/DHv4a/9QTtsYCgk8dWkhofk7abwLrVwA+XWpvwQ+Pu0OddwvmefccenZDnhwJgh6k1jJg68ean9i5yrq3cKKaTHEsalkRv1NxtohrX7zsx55PQwIDAQAB",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Abrir esta página no modo IE (ou voltar ao Chrome)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "storage",
+    "contextMenus",
+    "webNavigation"
+  ]
+}

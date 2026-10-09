@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>HikTab</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="container.css">
+</head>
+<body>
+  <div id="bar">
+    <button id="back" title="Voltar" disabled>&#9664;</button>
+    <button id="forward" title="Avançar" disabled>&#9654;</button>
+    <button id="reload" title="Recarregar">&#10227;</button>
+    <form id="go"><input id="addr" spellcheck="false" autocomplete="off" placeholder="Digite o endereço do DVR (ex.: 192.168.0.64)"></form>
+    <span class="badge" title="Esta aba usa o motor do Internet Explorer">IE</span>
+    <button id="chrome" title="Abrir esta página no Chrome normal">Abrir no Chrome</button>
+  </div>
+  <div id="view">
+    <div id="msg">Carregando o motor do Internet Explorer…</div>
+  </div>
+  <script src="container.js"></script>
+</body>
+</html>
