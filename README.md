@@ -13,9 +13,8 @@ Chrome (aba container.html)  ⇄  Native Messaging  ⇄  HikTabHost.exe (motor I
 
 1. Copie a pasta `hiktab` para o PC (ex.: `C:\HikTab`).
 2. Dê dois cliques em **`install.cmd`**. Não precisa de administrador.
-   - Ele pergunta o IP do DVR para incluir nos Sites Confiáveis (recomendado para o plugin ActiveX).
+   - Ele sempre pergunta o IP do DVR para incluir nos Sites Confiáveis (recomendado para o plugin ActiveX).
      Pressione Enter para usar `10.0.45.117`, ou digite outro(s) endereço(s) separados por espaço.
-   - Também aceita o IP direto na linha de comando: `install.cmd 192.168.0.64`
 3. No Chrome, abra `chrome://extensions`, ative o **Modo do desenvolvedor**, clique em **Carregar sem compactação** e escolha a pasta `hiktab\extension`.
 4. Nas opções da extensão (abre sozinha), cadastre o endereço do DVR e clique em **Salvar** e depois em **Testar componente**.
 5. Digite o IP do DVR na barra do Chrome: ele abre no modo IE. Na primeira vez, instale o plugin que o próprio DVR oferecer (WebComponents).
