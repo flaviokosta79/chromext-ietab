@@ -7,7 +7,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -27,8 +30,12 @@ namespace HikTab
         }
 
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            // Teste de linha de comando do cliente RTSP (sem Chrome):
+            //   HikTabHost.exe --rtsp-selftest rtsp://ip:554/Streaming/Channels/102 usuario senha [segundos] [arquivo.h264]
+            if (args.Length >= 2 && args[0] == "--rtsp-selftest") { RtspManager.SelfTest(args); return; }
+
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("ERRO: " + e.ExceptionObject);
             Application.ThreadException += (s, e) => Log("ERRO: " + e.Exception);
             try { Native.SetProcessDPIAware(); } catch { }
@@ -47,6 +54,7 @@ namespace HikTab
         readonly Stream stdout = Console.OpenStandardOutput();
         readonly object writeLock = new object();
         readonly Dictionary<uint, bool> browserPids = new Dictionary<uint, bool>();
+        readonly RtspManager rtsp;
         IntPtr chromeWnd = IntPtr.Zero;
         Rectangle target = Rectangle.Empty;
         bool visibleWanted = true;
@@ -75,6 +83,8 @@ namespace HikTab
             web.NewWindowRequested += url => Send(new { type = "newwindow", url = url });
             web.WindowClosingRequested += () => Send(new { type = "close" });
             Controls.Add(web);
+
+            rtsp = new RtspManager(Send);
 
             CreateHandle();
             new Thread(ReadLoop) { IsBackground = true }.Start();
@@ -189,6 +199,10 @@ namespace HikTab
                     Place();
                     break;
                 case "close": Quit(); break;
+                // Ponte de vídeo ao vivo: a extensão abre/fecha fluxos RTSP; o host devolve os quadros H.264.
+                case "rtsp.open": rtsp.Open(Str(m, "id"), Str(m, "url"), Str(m, "user"), Str(m, "pass")); break;
+                case "rtsp.close": rtsp.Close(Str(m, "id")); break;
+                case "rtsp.key": rtsp.RequestKey(Str(m, "id")); break;
             }
         }
 
@@ -289,6 +303,7 @@ namespace HikTab
 
         void Quit()
         {
+            try { rtsp.CloseAll(); } catch { }
             try { Native.ShowWindow(Handle, Native.SW_HIDE); } catch { }
             Environment.Exit(0);
         }
@@ -374,6 +389,515 @@ namespace HikTab
                 if (string.IsNullOrEmpty(url) || url == "about:blank") return;
                 cancel = true;
                 owner.RaiseNewWindow(url);
+            }
+        }
+    }
+
+    // ---------- Ponte RTSP -> navegador ----------
+    // Abre o fluxo RTSP (porta 554) do DVR, desempacota o H.264 (RFC 6184) e entrega cada quadro
+    // (unidade de acesso em Annex B) para a extensão, que decodifica com WebCodecs. O host NÃO decodifica.
+
+    class RtspManager
+    {
+        readonly Action<object> send;
+        readonly Dictionary<string, RtspSession> sessions = new Dictionary<string, RtspSession>();
+        readonly object gate = new object();
+
+        public RtspManager(Action<object> send) { this.send = send; }
+
+        public void Open(string id, string url, string user, string pass)
+        {
+            if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(url)) return;
+            Close(id);
+            var s = new RtspSession(url, user, pass);
+            s.Sdp = (codec, init) => send(new { type = "rtsp.sdp", id = id, codec = codec, init = Convert.ToBase64String(init) });
+            s.Frame = (key, data, ts) => send(new { type = "rtsp.frame", id = id, key = key, ts = ts, data = Convert.ToBase64String(data) });
+            s.Closed = msg => { lock (gate) sessions.Remove(id); send(new { type = "rtsp.error", id = id, message = msg }); };
+            lock (gate) sessions[id] = s;
+            s.Start();
+        }
+
+        public void Close(string id)
+        {
+            RtspSession s = null;
+            lock (gate) { if (id != null && sessions.TryGetValue(id, out s)) sessions.Remove(id); }
+            if (s != null) s.Stop();
+        }
+
+        // Pede ao DVR um quadro-chave imediato para este canal (recuperação rápida, sem esperar o GOP).
+        public void RequestKey(string id)
+        {
+            RtspSession s = null;
+            lock (gate) { if (id != null) sessions.TryGetValue(id, out s); }
+            if (s != null) s.RequestKeyFrameAsync();
+        }
+
+        public void CloseAll()
+        {
+            RtspSession[] all;
+            lock (gate) { all = new RtspSession[sessions.Count]; sessions.Values.CopyTo(all, 0); sessions.Clear(); }
+            foreach (var s in all) s.Stop();
+        }
+
+        public static void SelfTest(string[] args)
+        {
+            string url = args[1], user = args.Length > 2 ? args[2] : "", pass = args.Length > 3 ? args[3] : "";
+            int secs = args.Length > 4 ? int.Parse(args[4]) : 4;
+            string outf = args.Length > 5 ? args[5] : null;
+            FileStream fs = outf != null ? new FileStream(outf, FileMode.Create) : null;
+            // Índice (um quadro por linha: "offset tamanho key ts") para o teste separar as unidades de acesso.
+            StreamWriter idx = outf != null ? new StreamWriter(outf + ".idx") : null;
+            long offset = 0;
+            int frames = 0, keys = 0; string codecOut = "";
+            var s = new RtspSession(url, user, pass);
+            s.Sdp = (codec, init) => { codecOut = codec; Console.Error.WriteLine("SDP codec=" + codec + " init=" + init.Length + "B"); };
+            s.Frame = (key, data, ts) =>
+            {
+                frames++; if (key) keys++;
+                if (fs != null) { fs.Write(data, 0, data.Length); if (idx != null) idx.WriteLine(offset + " " + data.Length + " " + (key ? 1 : 0) + " " + ts); offset += data.Length; }
+            };
+            s.Closed = msg => Console.Error.WriteLine("FIM: " + msg);
+            s.Start();
+            Thread.Sleep(secs * 1000);
+            s.Stop();
+            Thread.Sleep(200);
+            if (fs != null) fs.Close();
+            if (idx != null) idx.Close();
+            Console.Error.WriteLine(string.Format("frames={0} keyframes={1} codec={2} arquivo={3}", frames, keys, codecOut, outf));
+        }
+    }
+
+    class RtspSession
+    {
+        readonly string url, user, pass;
+        public Action<string, byte[]> Sdp;        // codec (ex.: avc1.4D0014), SPS+PPS em Annex B
+        public Action<bool, byte[], long> Frame;  // keyframe?, unidade de acesso Annex B, timestamp (us)
+        public Action<string> Closed;
+
+        TcpClient client;
+        volatile bool running;
+        volatile bool stopped; // encerramento pedido por nós (troca de stream/fechar) -> não é falha
+        Thread thread;
+        readonly int channel; // nº do canal ISAPI (ex.: 101, 102), extraído da URL RTSP
+
+        // Estado do desempacotador H.264
+        MemoryStream au = new MemoryStream();
+        MemoryStream fu;
+        bool auKey, auHasParam, haveBase;
+        uint baseTs;
+        byte[] sps, pps, init;
+        static readonly byte[] StartCode = { 0, 0, 0, 1 };
+
+        public RtspSession(string url, string user, string pass) { this.url = url; this.user = user ?? ""; this.pass = pass ?? ""; channel = ParseChannel(url); }
+
+        static int ParseChannel(string url)
+        {
+            int i = url.IndexOf("/Channels/", StringComparison.OrdinalIgnoreCase);
+            if (i < 0) return 0;
+            i += 10;
+            int j = i;
+            while (j < url.Length && char.IsDigit(url[j])) j++;
+            int n; return int.TryParse(url.Substring(i, j - i), out n) ? n : 0;
+        }
+
+        // Força um quadro-chave (IDR) imediato neste canal via ISAPI, numa thread (não bloqueia o fluxo).
+        public void RequestKeyFrameAsync()
+        {
+            if (channel <= 0) return;
+            new Thread(RequestKeyFrame) { IsBackground = true }.Start();
+        }
+
+        void RequestKeyFrame()
+        {
+            try
+            {
+                var u = ParseUrl(url);
+                var req = (HttpWebRequest)WebRequest.Create("http://" + u.Host + "/ISAPI/Streaming/channels/" + channel + "/requestKeyFrame");
+                req.Method = "PUT";
+                req.Timeout = 5000;
+                req.ContentType = "application/xml";
+                var cache = new CredentialCache();
+                cache.Add(new Uri("http://" + u.Host), "Digest", new NetworkCredential(user, pass));
+                req.Credentials = cache;
+                var body = Encoding.UTF8.GetBytes("<?xml version=\"1.0\"?>");
+                req.ContentLength = body.Length;
+                using (var s = req.GetRequestStream()) s.Write(body, 0, body.Length);
+                using (var r = req.GetResponse()) { }
+            }
+            catch { }
+        }
+
+        public void Start() { running = true; thread = new Thread(Run) { IsBackground = true }; thread.Start(); }
+
+        public void Stop()
+        {
+            stopped = true;
+            running = false;
+            try { if (client != null) client.Close(); } catch { }
+        }
+
+        void Run()
+        {
+            string reason = "encerrado";
+            try
+            {
+                var u = ParseUrl(url);
+                client = new TcpClient();
+                client.Connect(u.Host, u.Port);
+                var stream = client.GetStream();
+                var reader = new Reader(stream);
+                var digest = new DigestRtsp(user, pass);
+                int cseq = 1;
+
+                // DESCRIBE (com repetição após o desafio Digest)
+                string sdp = null;
+                for (int attempt = 0; attempt < 2 && sdp == null; attempt++)
+                {
+                    WriteRequest(stream, "DESCRIBE", url, digest, cseq++, "Accept: application/sdp\r\n", null);
+                    var r = ReadResponse(reader);
+                    if (r.Status == 401 && attempt == 0) { digest.Challenge(r.Header("WWW-Authenticate")); continue; }
+                    if (r.Status != 200) { reason = "DESCRIBE HTTP " + r.Status; Finish(reason); return; }
+                    sdp = r.Body;
+                }
+                if (sdp == null) { Finish("falha na autenticação (DESCRIBE)"); return; }
+
+                string codec, control;
+                ParseSdp(sdp, out codec, out control, out sps, out pps);
+                RebuildInit();
+                if (init != null && Sdp != null) Sdp(codec, init);
+
+                string setupUrl = control.StartsWith("rtsp://") ? control : url.TrimEnd('/') + "/" + control;
+                WriteRequest(stream, "SETUP", setupUrl, digest, cseq++, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n", null);
+                var sr = ReadResponse(reader);
+                if (sr.Status != 200) { Finish("SETUP HTTP " + sr.Status); return; }
+                string session = sr.Header("Session");
+                if (session != null) { int semi = session.IndexOf(';'); if (semi >= 0) session = session.Substring(0, semi); session = session.Trim(); }
+
+                WriteRequest(stream, "PLAY", url, digest, cseq++, "Session: " + session + "\r\nRange: npt=0.000-\r\n", null);
+                var pr = ReadResponse(reader);
+                if (pr.Status != 200) { Finish("PLAY HTTP " + pr.Status); return; }
+                RequestKeyFrameAsync(); // o GOP pode ser longo; pede um quadro-chave já para começar rápido
+
+                // Laço de mídia: pacotes RTP intercalados ($ canal tamanho) e eventuais respostas RTSP.
+                var lenBuf = new byte[2];
+                while (running)
+                {
+                    int b = reader.ReadByte();
+                    if (b < 0) { reason = "conexão encerrada pelo DVR"; break; }
+                    if (b != 0x24) { reader.SkipResponse(b); continue; }
+                    int ch = reader.ReadByte();
+                    if (!reader.ReadExact(lenBuf, 2)) break;
+                    int len = (lenBuf[0] << 8) | lenBuf[1];
+                    var pkt = new byte[len];
+                    if (!reader.ReadExact(pkt, len)) break;
+                    if (ch == 0) Depacketize(pkt);
+                }
+            }
+            catch (Exception ex) { reason = ex.Message; }
+            Finish(reason);
+        }
+
+        bool finished;
+        // Só avisa a extensão quando foi falha de verdade; encerramento pedido por nós (troca de stream) é silencioso.
+        void Finish(string reason) { if (finished) return; finished = true; try { if (client != null) client.Close(); } catch { } var h = Closed; if (h != null && !stopped) h(reason); }
+
+        // ----- Desempacotamento H.264 (RFC 6184) -----
+
+        void Depacketize(byte[] p)
+        {
+            if (p.Length < 12) return;
+            int cc = p[0] & 0x0f;
+            bool ext = (p[0] & 0x10) != 0;
+            bool marker = (p[1] & 0x80) != 0;
+            uint ts = (uint)((p[4] << 24) | (p[5] << 16) | (p[6] << 8) | p[7]);
+            int hl = 12 + 4 * cc;
+            if (ext) { if (p.Length < hl + 4) return; int extLen = (p[hl + 2] << 8) | p[hl + 3]; hl += 4 + 4 * extLen; }
+            int payLen = p.Length - hl;
+            if (payLen < 1) return;
+            if ((p[0] & 0x20) != 0) { int pad = p[p.Length - 1]; payLen -= pad; if (payLen < 1) return; }
+
+            int f = p[hl], nalType = f & 0x1f;
+            if (nalType >= 1 && nalType <= 23)
+            {
+                WriteNal(p, hl, payLen);
+            }
+            else if (nalType == 28) // FU-A (NAL fragmentado)
+            {
+                if (payLen < 2) return;
+                int fuH = p[hl + 1];
+                bool start = (fuH & 0x80) != 0, end = (fuH & 0x40) != 0;
+                if (start) { fu = new MemoryStream(); fu.WriteByte((byte)((f & 0xe0) | (fuH & 0x1f))); }
+                if (fu != null)
+                {
+                    fu.Write(p, hl + 2, payLen - 2);
+                    if (end) { var nal = fu.ToArray(); fu = null; WriteNal(nal, 0, nal.Length); }
+                }
+            }
+            else if (nalType == 24) // STAP-A (vários NAL num pacote; costuma trazer SPS/PPS)
+            {
+                int o = hl + 1, endPos = hl + payLen;
+                while (o + 2 <= endPos)
+                {
+                    int sz = (p[o] << 8) | p[o + 1]; o += 2;
+                    if (sz <= 0 || o + sz > endPos) break;
+                    WriteNal(p, o, sz); o += sz;
+                }
+            }
+
+            if (marker) FlushAu(ts);
+        }
+
+        void WriteNal(byte[] buf, int off, int len)
+        {
+            if (len < 1) return;
+            int t = buf[off] & 0x1f;
+            if (t == 7) { sps = Slice(buf, off, len); auHasParam = true; RebuildInit(); }
+            else if (t == 8) { pps = Slice(buf, off, len); auHasParam = true; RebuildInit(); }
+            if (t == 5 || t == 7) auKey = true;
+            if (t == 6 || t == 9) return; // SEI e delimitador de acesso: dispensáveis
+            au.Write(StartCode, 0, 4);
+            au.Write(buf, off, len);
+        }
+
+        void FlushAu(uint ts)
+        {
+            byte[] data = au.ToArray();
+            au = new MemoryStream();
+            bool key = auKey; bool hadParam = auHasParam;
+            auKey = false; auHasParam = false;
+            if (data.Length == 0) return;
+            if (key && !hadParam && init != null)
+            {
+                var merged = new byte[init.Length + data.Length];
+                Buffer.BlockCopy(init, 0, merged, 0, init.Length);
+                Buffer.BlockCopy(data, 0, merged, init.Length, data.Length);
+                data = merged;
+            }
+            if (!haveBase) { baseTs = ts; haveBase = true; }
+            long micros = (long)((uint)(ts - baseTs)) * 1000000L / 90000L;
+            var h = Frame; if (h != null) h(key, data, micros);
+        }
+
+        void RebuildInit()
+        {
+            if (sps == null || pps == null) { init = null; return; }
+            var ms = new MemoryStream();
+            ms.Write(StartCode, 0, 4); ms.Write(sps, 0, sps.Length);
+            ms.Write(StartCode, 0, 4); ms.Write(pps, 0, pps.Length);
+            init = ms.ToArray();
+        }
+
+        static byte[] Slice(byte[] b, int off, int len) { var r = new byte[len]; Buffer.BlockCopy(b, off, r, 0, len); return r; }
+
+        // ----- RTSP: requisições, respostas, SDP, URL -----
+
+        void WriteRequest(Stream s, string method, string uri, DigestRtsp digest, int cseq, string extra, string body)
+        {
+            var sb = new StringBuilder();
+            sb.Append(method).Append(' ').Append(uri).Append(" RTSP/1.0\r\n");
+            sb.Append("CSeq: ").Append(cseq).Append("\r\n");
+            string az = digest.Header(method, uri);
+            if (az != null) sb.Append(az);
+            if (extra != null) sb.Append(extra);
+            sb.Append("User-Agent: HikTab\r\n\r\n");
+            if (body != null) sb.Append(body);
+            var bytes = Encoding.ASCII.GetBytes(sb.ToString());
+            s.Write(bytes, 0, bytes.Length);
+            s.Flush();
+        }
+
+        static RtspResponse ReadResponse(Reader reader)
+        {
+            var r = new RtspResponse();
+            string first = reader.ReadLine();
+            while (first != null && first.Length == 0) first = reader.ReadLine(); // pula linhas em branco iniciais
+            if (first == null) return r;
+            var parts = first.Split(' ');
+            if (parts.Length >= 2) int.TryParse(parts[1], out r.Status);
+            string line;
+            while ((line = reader.ReadLine()) != null && line.Length > 0)
+            {
+                int c = line.IndexOf(':');
+                if (c > 0) r.Headers[line.Substring(0, c).Trim().ToLowerInvariant()] = line.Substring(c + 1).Trim();
+            }
+            int len;
+            if (int.TryParse(r.Header("Content-Length"), out len) && len > 0)
+            {
+                var buf = new byte[len];
+                if (reader.ReadExact(buf, len)) r.Body = Encoding.UTF8.GetString(buf);
+            }
+            return r;
+        }
+
+        static void ParseSdp(string sdp, out string codec, out string control, out byte[] sps, out byte[] pps)
+        {
+            codec = "avc1.42E01E"; control = "trackID=video"; sps = null; pps = null;
+            bool inVideo = false;
+            foreach (var raw in sdp.Replace("\r\n", "\n").Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith("m=")) inVideo = line.StartsWith("m=video");
+                else if (inVideo && line.StartsWith("a=control:")) control = line.Substring(10).Trim();
+                else if (inVideo && line.StartsWith("a=fmtp:"))
+                {
+                    foreach (var tok in line.Substring(line.IndexOf(' ') + 1).Split(';'))
+                    {
+                        var kv = tok.Trim();
+                        if (kv.StartsWith("profile-level-id=")) { var v = kv.Substring(17).Trim(); if (v.Length >= 6) codec = "avc1." + v.Substring(0, 6).ToUpperInvariant(); }
+                        else if (kv.StartsWith("sprop-parameter-sets="))
+                        {
+                            var sets = kv.Substring(21).Split(',');
+                            if (sets.Length >= 1) sps = TryB64(sets[0]);
+                            if (sets.Length >= 2) pps = TryB64(sets[1]);
+                        }
+                    }
+                }
+            }
+        }
+
+        static byte[] TryB64(string s) { try { return Convert.FromBase64String(s.Trim()); } catch { return null; } }
+
+        struct Url { public string Host; public int Port; }
+        static Url ParseUrl(string url)
+        {
+            var u = new Url(); u.Port = 554;
+            string rest = url.Substring(url.IndexOf("://") + 3);
+            int slash = rest.IndexOf('/');
+            string authority = slash < 0 ? rest : rest.Substring(0, slash);
+            int at = authority.IndexOf('@');
+            if (at >= 0) authority = authority.Substring(at + 1);
+            int colon = authority.LastIndexOf(':');
+            if (colon >= 0) { u.Host = authority.Substring(0, colon); int.TryParse(authority.Substring(colon + 1), out u.Port); }
+            else u.Host = authority;
+            return u;
+        }
+    }
+
+    class RtspResponse
+    {
+        public int Status;
+        public string Body = "";
+        public Dictionary<string, string> Headers = new Dictionary<string, string>();
+        public string Header(string name) { string v; return Headers.TryGetValue(name.ToLowerInvariant(), out v) ? v : null; }
+    }
+
+    // Leitor bufferizado: linhas de texto (RTSP) e blocos binários (RTP) no mesmo fluxo.
+    class Reader
+    {
+        readonly Stream s;
+        readonly byte[] buf = new byte[65536];
+        int pos, len;
+        public Reader(Stream s) { this.s = s; }
+
+        public int ReadByte()
+        {
+            if (pos >= len) { len = s.Read(buf, 0, buf.Length); pos = 0; if (len <= 0) return -1; }
+            return buf[pos++];
+        }
+
+        public bool ReadExact(byte[] dst, int count)
+        {
+            int off = 0;
+            while (off < count)
+            {
+                if (pos >= len) { len = s.Read(buf, 0, buf.Length); pos = 0; if (len <= 0) return false; }
+                int n = Math.Min(count - off, len - pos);
+                Buffer.BlockCopy(buf, pos, dst, off, n); pos += n; off += n;
+            }
+            return true;
+        }
+
+        public string ReadLine()
+        {
+            var sb = new StringBuilder();
+            int b;
+            while ((b = ReadByte()) >= 0)
+            {
+                if (b == '\n') break;
+                if (b != '\r') sb.Append((char)b);
+            }
+            if (b < 0 && sb.Length == 0) return null;
+            return sb.ToString();
+        }
+
+        // Já consumimos o 1º byte de uma resposta RTSP (não era '$'); lê e descarta o resto dela.
+        public void SkipResponse(int firstByte)
+        {
+            var sb = new StringBuilder();
+            sb.Append((char)firstByte);
+            string line = sb.ToString() + ReadLineRaw();
+            int contentLen = 0;
+            string l;
+            while ((l = ReadLine()) != null && l.Length > 0)
+            {
+                int c = l.IndexOf(':');
+                if (c > 0 && l.Substring(0, c).Trim().ToLowerInvariant() == "content-length") int.TryParse(l.Substring(c + 1).Trim(), out contentLen);
+            }
+            if (contentLen > 0) { var b = new byte[contentLen]; ReadExact(b, contentLen); }
+        }
+
+        string ReadLineRaw() { return ReadLine() ?? ""; }
+    }
+
+    // Autenticação Digest para RTSP (MD5, com ou sem qop=auth).
+    class DigestRtsp
+    {
+        readonly string user, pass;
+        string realm, nonce, qop, opaque;
+        int nc;
+
+        public DigestRtsp(string user, string pass) { this.user = user; this.pass = pass; }
+
+        public void Challenge(string www)
+        {
+            if (www == null) return;
+            realm = Extract(www, "realm");
+            nonce = Extract(www, "nonce");
+            qop = Extract(www, "qop");
+            opaque = Extract(www, "opaque");
+            nc = 0;
+        }
+
+        public string Header(string method, string uri)
+        {
+            if (nonce == null) return null;
+            string ha1 = Md5(user + ":" + realm + ":" + pass);
+            string ha2 = Md5(method + ":" + uri);
+            var sb = new StringBuilder("Authorization: Digest username=\"" + user + "\", realm=\"" + realm + "\", nonce=\"" + nonce + "\", uri=\"" + uri + "\", algorithm=MD5");
+            if (!string.IsNullOrEmpty(qop))
+            {
+                string ncv = (++nc).ToString("x8");
+                string cnonce = Md5(Environment.TickCount + ":" + uri).Substring(0, 16);
+                string response = Md5(ha1 + ":" + nonce + ":" + ncv + ":" + cnonce + ":auth:" + ha2);
+                sb.Append(", response=\"" + response + "\", qop=auth, nc=" + ncv + ", cnonce=\"" + cnonce + "\"");
+            }
+            else
+            {
+                sb.Append(", response=\"" + Md5(ha1 + ":" + nonce + ":" + ha2) + "\"");
+            }
+            if (opaque != null) sb.Append(", opaque=\"" + opaque + "\"");
+            sb.Append("\r\n");
+            return sb.ToString();
+        }
+
+        static string Extract(string s, string key)
+        {
+            int i = s.IndexOf(key + "=", StringComparison.OrdinalIgnoreCase);
+            if (i < 0) return null;
+            i += key.Length + 1;
+            if (i < s.Length && s[i] == '"') { int e = s.IndexOf('"', i + 1); return e < 0 ? null : s.Substring(i + 1, e - i - 1); }
+            int end = i; while (end < s.Length && s[end] != ',' && s[end] != ' ') end++;
+            return s.Substring(i, end - i);
+        }
+
+        static string Md5(string text)
+        {
+            using (var md5 = MD5.Create())
+            {
+                var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(text));
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash) sb.Append(b.ToString("x2"));
+                return sb.ToString();
             }
         }
     }

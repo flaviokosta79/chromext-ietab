@@ -5,44 +5,136 @@
   <title>HikTab - Opções</title>
   <link rel="icon" href="icons/icon32.png">
   <style>
-    body { font: 14px "Segoe UI", sans-serif; color: #222; background: #fff; max-width: 720px; margin: 32px auto; padding: 0 16px; }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    h2 { font-size: 16px; margin-top: 28px; }
-    p, li { color: #444; line-height: 1.5; }
-    textarea { width: 100%; box-sizing: border-box; height: 140px; font: 13px Consolas, monospace; padding: 8px; }
-    button { padding: 7px 16px; margin-right: 8px; cursor: pointer; }
+    :root { --line: #e3e5e8; --muted: #5f6368; --accent: #1565c0; }
+    * { box-sizing: border-box; }
+    body { font: 14px "Segoe UI", sans-serif; color: #202124; background: #f5f6f7; max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 22px; margin: 4px 0 2px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+    .card h2 { font-size: 15px; margin: 0 0 14px; }
+    p, li { color: #3c4043; line-height: 1.5; }
+    .hint { color: var(--muted); font-size: 13px; }
+
+    .form { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+    .form input { width: 100%; padding: 7px 10px; font: inherit; border: 1px solid var(--line); border-radius: 7px; }
+    .form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+    .btn { padding: 8px 16px; font: inherit; cursor: pointer; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #202124; }
+    .btn:hover { background: #f1f3f4; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: #0d4ea0; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+
+    .status { font-weight: 600; font-size: 13px; }
+    .ok { color: #1a7f37; }
+    .err { color: #c5221f; }
+
+    /* Interruptor liga/desliga */
+    .toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .toggle .label b { font-size: 15px; }
+    .switch { position: relative; display: inline-block; width: 52px; height: 30px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; cursor: pointer; background: #c0c4c9; border-radius: 30px; transition: .2s; }
+    .slider::before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    .switch input:checked + .slider { background: #1a7f37; }
+    .switch input:checked + .slider::before { transform: translateX(22px); }
+    .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .state-txt { margin-top: 10px; font-size: 13px; }
+    .state-txt b { color: #202124; }
+
+    details.card > summary { cursor: pointer; font-size: 15px; font-weight: 600; list-style: none; }
+    details.card > summary::after { content: " ▸"; color: var(--muted); }
+    details[open].card > summary::after { content: " ▾"; }
+    details .block { margin-top: 16px; }
+    details .block:first-of-type { margin-top: 18px; }
+    textarea { width: 100%; height: 110px; font: 13px Consolas, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 7px; }
     code { background: #f1f3f4; padding: 1px 5px; border-radius: 3px; }
-    .status { margin-left: 8px; font-weight: 600; }
-    .ok { color: #2e7d32; }
-    .err { color: #c62828; }
+    label[for] { color: var(--muted); }
   </style>
 </head>
 <body>
-  <h1>HikTab — Modo IE para câmeras</h1>
-  <p>Abre os endereços abaixo automaticamente com o motor do Internet Explorer (com ActiveX), dentro da aba do Chrome.</p>
+  <h1>HikTab — Câmeras</h1>
+  <p class="sub">Veja as câmeras do DVR no Chrome, sem instalar plugin.</p>
 
-  <h2>Endereços que abrem sempre no modo IE</h2>
-  <p>Um por linha. Exemplos: <code>192.168.0.64</code>, <code>192.168.0.64:8080</code>, <code>192.168.0.*</code>, <code>http://dvr.local/*</code></p>
-  <textarea id="sites" spellcheck="false"></textarea>
-  <p>
-    <button id="save">Salvar</button>
-    <button id="open">Abrir o primeiro endereço agora</button>
-    <span id="saved" class="status"></span>
-  </p>
+  <section class="card">
+    <h2>Conexão com o DVR</h2>
+    <div class="form">
+      <label for="camHost">Endereço</label><input id="camHost" spellcheck="false" placeholder="10.0.45.117">
+      <label for="camUser">Usuário</label><input id="camUser" spellcheck="false" autocomplete="off">
+      <label for="camPass">Senha</label><input id="camPass" type="password" autocomplete="new-password">
+      <label for="camChannels">Canais</label><input id="camChannels" type="number" min="1" max="64">
+    </div>
+    <div class="row">
+      <button id="camSave" class="btn primary">Salvar</button>
+      <button id="camTest" class="btn">Testar conexão</button>
+      <span id="camStatus" class="status"></span>
+    </div>
+    <p class="hint" style="margin-bottom:0">A senha fica salva só neste computador. Prefira um usuário do DVR só com permissão de visualização.</p>
+  </section>
 
-  <h2>Componente do Windows (HikTab Host)</h2>
-  <p>
-    <button id="test">Testar componente</button>
-    <span id="hoststatus" class="status"></span>
-  </p>
-  <p>Se o teste falhar, execute <code>install.cmd</code> na pasta do HikTab neste computador.</p>
+  <section class="card">
+    <div class="toggle">
+      <div class="label">
+        <b>Vídeo ao vivo na página do DVR</b>
+        <div class="hint">Mostra as câmeras ao vivo dentro da página da Hikvision, sem plugin.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="camOverlay"><span class="slider"></span></label>
+    </div>
+    <div class="state-txt" id="overlayState"></div>
+    <div class="row">
+      <button id="camLive" class="btn primary">Abrir câmeras ao vivo</button>
+      <button id="camOpen" class="btn">Abrir em fotos</button>
+    </div>
+  </section>
 
-  <h2>Como usar</h2>
-  <ul>
-    <li>Digite o endereço do DVR na barra do Chrome: se estiver na lista acima, ele abre no modo IE.</li>
-    <li>O botão da extensão na barra alterna a aba atual entre o Chrome e o modo IE.</li>
-    <li>Clique com o botão direito num link e escolha <b>Abrir link no modo IE</b>.</li>
-  </ul>
+  <details class="card">
+    <summary>Avançado</summary>
+
+    <div class="block">
+      <h2>Atualização do modo fotos</h2>
+      <div class="form">
+        <label for="camInterval">Atualizar a cada</label>
+        <select id="camInterval" style="padding:7px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;max-width:160px">
+          <option value="500">0,5 s</option>
+          <option value="1000">1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+        </select>
+      </div>
+      <p class="hint">Vale só para o modo fotos (mosaico). Salve na seção Conexão.</p>
+    </div>
+
+    <div class="block">
+      <h2>Componente do Windows (HikTab Host)</h2>
+      <div class="row" style="margin-top:0">
+        <button id="test" class="btn">Testar componente</button>
+        <span id="hoststatus" class="status"></span>
+      </div>
+      <p class="hint">O vídeo ao vivo precisa dele. Se o teste falhar, execute <code>install.cmd</code> na pasta do HikTab.</p>
+    </div>
+
+    <div class="block">
+      <h2>Diagnóstico de vídeo</h2>
+      <div class="row" style="margin-top:0">
+        <button id="camDiag" class="btn">Gerar diagnóstico</button>
+        <span id="diagStatus" class="status"></span>
+      </div>
+      <p class="hint">Grava em Downloads <code>hiktab-diag.txt</code> e <code>hiktab-diag.bin</code> (uns segundos do canal 1). A senha não é gravada.</p>
+    </div>
+
+    <div class="block">
+      <h2>Endereços que abrem sempre no modo IE</h2>
+      <p class="hint">Um por linha. Ex.: <code>192.168.0.64</code>, <code>192.168.0.*</code>, <code>http://dvr.local/*</code>. O endereço do DVR acima é controlado pelo interruptor e não precisa entrar aqui.</p>
+      <textarea id="sites" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="save" class="btn">Salvar lista</button>
+        <button id="open" class="btn">Abrir o primeiro agora</button>
+        <span id="saved" class="status"></span>
+      </div>
+    </div>
+  </details>
+
+  <script src="digest.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

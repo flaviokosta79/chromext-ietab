@@ -1,0 +1,141 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font: 13px "Segoe UI", sans-serif;
+  background: #111;
+  color: #eee;
+}
+
+body { display: flex; flex-direction: column; }
+
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  background: #1e1f22;
+  border-bottom: 1px solid #333;
+  flex: none;
+}
+
+#bar button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2b2d31;
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+}
+
+#bar button:hover { background: #3a3d42; }
+#bar button[hidden] { display: none; }
+
+body.embed #bar { display: none; }
+
+/* Atalho mostrado só na sobreposição dentro da página do DVR. */
+#plugin {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: rgba(30, 31, 34, .85);
+  color: #eee;
+  font: 12px "Segoe UI", sans-serif;
+  cursor: pointer;
+  opacity: .5;
+}
+#plugin:hover { opacity: 1; }
+body.embed #plugin:not([hidden]) { display: block; }
+#plugin[hidden] { display: none; }
+body:not(.embed) #plugin { display: none; }
+
+#title { font-weight: 600; }
+#status { color: #aaa; }
+.spacer { flex: 1; }
+
+.badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #c62828;
+  color: #fff;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+#grid {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-height: 0;
+  background: #000;
+}
+
+.tile {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  cursor: zoom-in;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tile canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tile .label {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .6);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.tile .state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  text-align: center;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.tile.stale .label::after { content: " \25CF"; color: #e53935; }
+
+body.single .tile { display: none; cursor: zoom-out; }
+body.single .tile.focus { display: block; grid-column: 1 / -1; grid-row: 1 / -1; }
+
+#msg {
+  position: absolute;
+  inset: 34px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: #111;
+  color: #ddd;
+  font-size: 15px;
+}
+
+#msg[hidden] { display: none; }
+#msg button { padding: 7px 16px; font: inherit; cursor: pointer; }

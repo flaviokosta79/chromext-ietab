@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "HikTab - Modo IE para câmeras",
   "short_name": "HikTab",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Abre páginas (como DVRs/NVRs Hikvision) com o motor do Internet Explorer dentro de uma aba do Chrome, com suporte a ActiveX.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjtosEiTXqFkUMosSEe5u3kvn4KOegxGPfEHekrxqikDIHFdYNCD1wM63z3y4kbjlKUFsFZhnIVXSYClAU0BBTB4NSElJPTBfXtUUyjnwlM8Q1aCi/bKLmCmymOxM+yZd6roXymTOq9grSvcjx4CIPLkQ6NfZyQNhUznPxciOGs0jRN+rnbEQs09jJhBOdcdNqAWCBUzs6RqjaPtP40ZbrOhn1Gzayvtkr0o61D/DHv4a/9QTtsYCgk8dWkhofk7abwLrVwA+XWpvwQ+Pu0OddwvmefccenZDnhwJgh6k1jJg68ean9i5yrq3cKKaTHEsalkRv1NxtohrX7zsx55PQwIDAQAB",
   "background": {
@@ -29,5 +29,25 @@
     "storage",
     "contextMenus",
     "webNavigation"
+  ],
+  "host_permissions": [
+    "http://10.0.45.117/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://10.0.45.117/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["video.html"],
+      "matches": ["http://10.0.45.117/*"]
+    }
   ]
 }

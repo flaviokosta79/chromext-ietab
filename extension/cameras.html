@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Câmeras</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="cameras.css">
+</head>
+<body>
+  <div id="bar">
+    <button id="back" title="Voltar ao mosaico (Esc)" hidden>&#9664; Mosaico</button>
+    <span id="title">Câmeras</span>
+    <span class="badge" title="Imagens obtidas direto do DVR, sem plugin">sem plugin</span>
+    <span id="status"></span>
+    <span class="spacer"></span>
+    <button id="ie" title="Abrir a interface completa do DVR no modo IE (precisa do plugin)">Abrir DVR no modo IE</button>
+    <button id="options" title="Endereço, usuário, senha e canais">Configurar</button>
+  </div>
+  <div id="grid"></div>
+  <div id="msg" hidden></div>
+  <script src="digest.js"></script>
+  <script src="cameras.js"></script>
+</body>
+</html>
